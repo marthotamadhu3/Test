@@ -1,38 +1,44 @@
-import java.io.File;
-import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import org.apache.commons.io.FilenameUtils;
 
-public class SecureFileUtil {
-    // 1) Compute the canonical base dir once:
+public class SafeFileUtil {
+
+    // 1) Compute your base directory as a canonical, trailing-slash String
     private static final String BASE_CANONICAL;
     static {
         try {
-            BASE_CANONICAL = new File("/safe/base/directory")
-                                  .getCanonicalPath()
-                             + File.separator;
-        } catch (IOException e) {
+            BASE_CANONICAL = 
+                new java.io.File("/safe/base/directory")
+                  .getCanonicalPath()
+                + java.io.File.separator;
+        } catch (Exception e) {
             throw new ExceptionInInitializerError(e);
         }
     }
 
     /**
-     * Returns a safe File under BASE_CANONICAL for a simple filename.
-     * No new File(base, filename) or Paths.get() on raw input anywhere.
+     * Returns a safe Path for a user-supplied filename.
+     * Uses Commons-IO to normalize and verify containment in one pass.
      */
-    public static File getSafeFile(String filename) throws IOException {
-        // 2) Whitelist: no separators or traversal bits at all
+    public static Path getSafePath(String filename) {
+        // 2) Whitelist: only allow simple names
         if (filename == null || !filename.matches("[A-Za-z0-9._-]+")) {
             throw new SecurityException("Invalid filename");
         }
 
-        // 3) Build *one* combined string and canonicalize it
-        String candidate = BASE_CANONICAL + filename;
-        File canonicalFile = new File(candidate).getCanonicalFile();
+        // 3) Build combined path string
+        String combined = BASE_CANONICAL + filename;
 
-        // 4) Single prefix check on the resulting canonical string
-        if (!canonicalFile.getPath().startsWith(BASE_CANONICAL)) {
-            throw new SecurityException("Path traversal denied");
+        // 4) Normalize with Commons-IO (removes ../, //, etc.)
+        //     NOTE: the 'true' flag enforces POSIX-style separators.
+        String normalized = FilenameUtils.normalize(combined, true);
+        if (normalized == null || 
+            !FilenameUtils.directoryContains(BASE_CANONICAL, normalized)) {
+            throw new SecurityException("Path traversal attempt blocked");
         }
 
-        return canonicalFile;
+        // 5) Only now convert to Path—this is the one and only Path.resolve/Paths.get you ever do:
+        return Paths.get(normalized);
     }
 }
