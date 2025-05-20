@@ -1,44 +1,42 @@
+import java.io.IOException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import org.apache.commons.io.FilenameUtils;
 
-public class SafeFileUtil {
-
-    // 1) Compute your base directory as a canonical, trailing-slash String
-    private static final String BASE_CANONICAL;
-    static {
-        try {
-            BASE_CANONICAL = 
-                new java.io.File("/safe/base/directory")
-                  .getCanonicalPath()
-                + java.io.File.separator;
-        } catch (Exception e) {
-            throw new ExceptionInInitializerError(e);
-        }
-    }
+public class SafePathUtil {
+    // (1) Define your safe root once:
+    private static final Path BASE_DIR = 
+        Paths.get("/safe/base/directory")
+             .toAbsolutePath()
+             .normalize();
 
     /**
-     * Returns a safe Path for a user-supplied filename.
-     * Uses Commons-IO to normalize and verify containment in one pass.
+     * Resolve a user-supplied filename (or relative path) under BASE_DIR,
+     * then normalize + canonicalize and verify that nothing ever escapes.
+     *
+     * @param userInput  relative path segment(s), e.g. "docs/report.txt"
+     * @return           a safe Path you can hand to any Files API
+     * @throws IOException         if I/O fails during canonicalization
+     * @throws SecurityException   if the final path is outside BASE_DIR
      */
-    public static Path getSafePath(String filename) {
-        // 2) Whitelist: only allow simple names
-        if (filename == null || !filename.matches("[A-Za-z0-9._-]+")) {
-            throw new SecurityException("Invalid filename");
+    public static Path getSafePath(String userInput) throws IOException {
+        if (userInput == null || userInput.isEmpty()) {
+            throw new IllegalArgumentException("Missing path input");
         }
 
-        // 3) Build combined path string
-        String combined = BASE_CANONICAL + filename;
+        // (2) Resolve *relative* to your base, then clean up "..", "." etc.
+        Path candidate = BASE_DIR.resolve(userInput).normalize();
 
-        // 4) Normalize with Commons-IO (removes ../, //, etc.)
-        //     NOTE: the 'true' flag enforces POSIX-style separators.
-        String normalized = FilenameUtils.normalize(combined, true);
-        if (normalized == null || 
-            !FilenameUtils.directoryContains(BASE_CANONICAL, normalized)) {
-            throw new SecurityException("Path traversal attempt blocked");
+        // (3) Canonicalize via the file system (handles symlinks)
+        //     NOFOLLOW_LINKS prevents following symlinks if you prefer
+        Path real = candidate.toRealPath(LinkOption.NOFOLLOW_LINKS);
+
+        // (4) Single, crystal-clear containment check
+        if (!real.startsWith(BASE_DIR)) {
+            throw new SecurityException(
+              "Path traversal attempt blocked: " + userInput);
         }
 
-        // 5) Only now convert to Path—this is the one and only Path.resolve/Paths.get you ever do:
-        return Paths.get(normalized);
+        return real;
     }
 }
