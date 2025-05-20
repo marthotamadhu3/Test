@@ -1,0 +1,44 @@
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class SecureFileUtil {
+    // 1) Your safe root
+    private static final File BASE_DIR = new File("/safe/base/directory");
+
+    // Pre‐compute the canonical form of the base (handles symlinks in the base itself)
+    private static final String BASE_CANONICAL;
+    static {
+        try {
+            BASE_CANONICAL = BASE_DIR.getCanonicalPath() + File.separator;
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to resolve base directory", e);
+        }
+    }
+
+    /**
+     * Returns a safe, canonical Path for a user‐supplied filename.
+     * Throws if the filename is invalid or escapes the base directory.
+     */
+    public static Path getSafePath(String filename) throws IOException {
+        // 2) Whitelist: allow only letters, digits, dot, underscore, dash
+        if (filename == null || !filename.matches("[A-Za-z0-9._-]+")) {
+            throw new SecurityException("Invalid filename");
+        }
+
+        // 3) Build child File; do NOT use resolve or Paths.get(filename)
+        File child = new File(BASE_DIR, filename);
+
+        // 4) Canonicalize: follows symlinks and collapses ../ internally
+        String childCanonical = child.getCanonicalPath();
+
+        // 5) Containment check: ensure the child really lives under our base
+        if (!childCanonical.startsWith(BASE_CANONICAL)) {
+            throw new SecurityException("Path traversal attempt blocked");
+        }
+
+        // 6) Safe to return a Path now
+        return Paths.get(childCanonical);
+    }
+}
