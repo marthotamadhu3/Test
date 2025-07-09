@@ -10,57 +10,122 @@ Constrains:
 6] Easy to manage
 
 ---
+// ---------- PostgresEntityMarker.java ----------
+package com.example.common.entity;
 
-## 📄 `application.yml`
+public interface PostgresEntityMarker {}
 
-```yaml
-spring:
-  jpa:
-    hibernate:
-      ddl-auto: none
 
-postgres:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/postgres_db
-    username: postgres_user
-    password: postgres_pass
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      maximum-pool-size: 10
-  jpa:
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-    show-sql: true
-    hibernate:
-      ddl-auto: update
+// ---------- Db2EntityMarker.java ----------
+package com.example.common.entity;
 
-db2:
-  datasource:
-    url: jdbc:db2://localhost:50000/db2_db
-    username: db2_user
-    password: db2_pass
-    driver-class-name: com.ibm.db2.jcc.DB2Driver
-    hikari:
-      maximum-pool-size: 10
-  jpa:
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.DB2Dialect
-    show-sql: true
-    hibernate:
-      ddl-auto: none
-```
+public interface Db2EntityMarker {}
 
----
 
-## ✅ `PostgresConfig.java`
+// ---------- PostgresRepositoryMarker.java ----------
+package com.example.common.repository;
 
-```java
-package com.example.demo.config;
+public interface PostgresRepositoryMarker {}
 
+
+// ---------- Db2RepositoryMarker.java ----------
+package com.example.common.repository;
+
+public interface Db2RepositoryMarker {}
+
+
+// ---------- AccountSummary.java (Postgres Entity) ----------
+package com.example.account.domain.postgres;
+
+import com.example.common.entity.PostgresEntityMarker;
+import jakarta.persistence.*;
+
+@Entity
+public class AccountSummary implements PostgresEntityMarker {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+
+    // Getters and Setters
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+}
+
+
+// ---------- AccountMaster.java (DB2 Entity) ----------
+package com.example.account.domain.db2;
+
+import com.example.common.entity.Db2EntityMarker;
+import jakarta.persistence.*;
+
+@Entity
+public class AccountMaster implements Db2EntityMarker {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String type;
+
+    // Getters and Setters
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+}
+
+
+// ---------- AccountSummaryRepository.java ----------
+package com.example.account.adapter.db.postgres.repository;
+
+import com.example.account.domain.postgres.AccountSummary;
+import com.example.common.repository.PostgresRepositoryMarker;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface AccountSummaryRepository extends JpaRepository<AccountSummary, Long>, PostgresRepositoryMarker {}
+
+
+// ---------- AccountMasterRepository.java ----------
+package com.example.account.adapter.db.db2.repository;
+
+import com.example.account.domain.db2.AccountMaster;
+import com.example.common.repository.Db2RepositoryMarker;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface AccountMasterRepository extends JpaRepository<AccountMaster, Long>, Db2RepositoryMarker {}
+
+
+// ---------- PostgresConfig.java ----------
+package com.example.config;
+
+import com.example.common.entity.PostgresEntityMarker;
+import com.example.common.repository.PostgresRepositoryMarker;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.orm.jpa.HibernateProperties;
 import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.jdbc.DataSourceBuilder;
@@ -73,14 +138,13 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import javax.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
-import java.util.Map;
 
 @Configuration
 @EnableTransactionManagement
 @EnableJpaRepositories(
-        basePackages = "com.example.demo.postgres.repository",
-        entityManagerFactoryRef = "postgresEntityManagerFactory",
-        transactionManagerRef = "postgresTransactionManager"
+    basePackageClasses = PostgresRepositoryMarker.class,
+    entityManagerFactoryRef = "postgresEntityManagerFactory",
+    transactionManagerRef = "postgresTransactionManager"
 )
 public class PostgresConfig {
 
@@ -94,15 +158,13 @@ public class PostgresConfig {
     @Primary
     @Bean
     public LocalContainerEntityManagerFactoryBean postgresEntityManagerFactory(
-            JpaProperties jpaProperties,
-            HibernateProperties hibernateProperties) {
+            JpaProperties jpaProperties) {
+
         LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
         em.setDataSource(postgresDataSource());
-        em.setPackagesToScan("com.example.demo.postgres.entity");
-        em.setPersistenceUnitName("postgres");
+        em.setPackagesToScan(PostgresEntityMarker.class.getPackage().getName());
         em.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
-        em.setJpaPropertyMap(hibernateProperties.determineHibernateProperties(
-                jpaProperties.getProperties(), new HibernateSettings()));
+        em.setJpaPropertyMap(jpaProperties.getProperties());
         return em;
     }
 
@@ -113,17 +175,14 @@ public class PostgresConfig {
         return new JpaTransactionManager(emf);
     }
 }
-```
 
----
 
-## ✅ `Db2Config.java`
+// ---------- Db2Config.java ----------
+package com.example.config;
 
-```java
-package com.example.demo.config;
-
+import com.example.common.entity.Db2EntityMarker;
+import com.example.common.repository.Db2RepositoryMarker;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.orm.jpa.HibernateProperties;
 import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.jdbc.DataSourceBuilder;
@@ -140,9 +199,9 @@ import javax.sql.DataSource;
 @Configuration
 @EnableTransactionManagement
 @EnableJpaRepositories(
-        basePackages = "com.example.demo.db2.repository",
-        entityManagerFactoryRef = "db2EntityManagerFactory",
-        transactionManagerRef = "db2TransactionManager"
+    basePackageClasses = Db2RepositoryMarker.class,
+    entityManagerFactoryRef = "db2EntityManagerFactory",
+    transactionManagerRef = "db2TransactionManager"
 )
 public class Db2Config {
 
@@ -154,15 +213,13 @@ public class Db2Config {
 
     @Bean
     public LocalContainerEntityManagerFactoryBean db2EntityManagerFactory(
-            JpaProperties jpaProperties,
-            HibernateProperties hibernateProperties) {
+            JpaProperties jpaProperties) {
+
         LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
         em.setDataSource(db2DataSource());
-        em.setPackagesToScan("com.example.demo.db2.entity");
-        em.setPersistenceUnitName("db2");
+        em.setPackagesToScan(Db2EntityMarker.class.getPackage().getName());
         em.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
-        em.setJpaPropertyMap(hibernateProperties.determineHibernateProperties(
-                jpaProperties.getProperties(), new HibernateSettings()));
+        em.setJpaPropertyMap(jpaProperties.getProperties());
         return em;
     }
 
@@ -172,120 +229,3 @@ public class Db2Config {
         return new JpaTransactionManager(emf);
     }
 }
-```
-
----
-
-## ✅ Postgres Entity Example
-
-```java
-package com.example.demo.postgres.entity;
-
-import jakarta.persistence.*;
-
-@Entity
-public class UserEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String name;
-}
-```
-
-## ✅ DB2 Entity Example
-
-```java
-package com.example.demo.db2.entity;
-
-import jakarta.persistence.*;
-
-@Entity
-public class EmployeeEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String dept;
-}
-```
-
----
-
-## ✅ Postgres Repository
-
-```java
-package com.example.demo.postgres.repository;
-
-import com.example.demo.postgres.entity.UserEntity;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface UserRepository extends JpaRepository<UserEntity, Long> {
-}
-```
-
----
-
-## ✅ DB2 Repository with Native Query
-
-```java
-package com.example.demo.db2.repository;
-
-import com.example.demo.db2.entity.EmployeeEntity;
-import org.springframework.data.jpa.repository.*;
-import org.springframework.data.repository.query.Param;
-
-import java.util.List;
-
-public interface EmployeeRepository extends JpaRepository<EmployeeEntity, Long> {
-
-    @Query(value = "SELECT * FROM EMPLOYEE WHERE DEPT = :dept", nativeQuery = true)
-    List<EmployeeEntity> findByDeptNative(@Param("dept") String dept);
-}
-```
-
----
-
-## ✅ Test Controller
-
-```java
-package com.example.demo.controller;
-
-import com.example.demo.postgres.entity.UserEntity;
-import com.example.demo.postgres.repository.UserRepository;
-import com.example.demo.db2.entity.EmployeeEntity;
-import com.example.demo.db2.repository.EmployeeRepository;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-
-@RestController
-public class TestController {
-
-    private final UserRepository userRepo;
-    private final EmployeeRepository empRepo;
-
-    public TestController(UserRepository userRepo, EmployeeRepository empRepo) {
-        this.userRepo = userRepo;
-        this.empRepo = empRepo;
-    }
-
-    @GetMapping("/pg-users")
-    public List<UserEntity> getPostgresUsers() {
-        return userRepo.findAll();
-    }
-
-    @GetMapping("/db2-emps/{dept}")
-    public List<EmployeeEntity> getDb2Employees(@PathVariable String dept) {
-        return empRepo.findByDeptNative(dept);
-    }
-}
-```
-
----
-
-Let me know if you'd like to:
-
-* Add Flyway/Liquibase
-* Add unit tests
-* Build this as a sample Maven project archive (I can generate structure)
