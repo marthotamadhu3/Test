@@ -1,42 +1,282 @@
-import java.io.IOException;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+Here’s the complete working setup for a Spring Boot application with **two datasources (Postgres as default and DB2)**, satisfying all your constraints.
 
-public class SafePathUtil {
-    // (1) Define your safe root once:
-    private static final Path BASE_DIR = 
-        Paths.get("/safe/base/directory")
-             .toAbsolutePath()
-             .normalize();
+---
 
-    /**
-     * Resolve a user-supplied filename (or relative path) under BASE_DIR,
-     * then normalize + canonicalize and verify that nothing ever escapes.
-     *
-     * @param userInput  relative path segment(s), e.g. "docs/report.txt"
-     * @return           a safe Path you can hand to any Files API
-     * @throws IOException         if I/O fails during canonicalization
-     * @throws SecurityException   if the final path is outside BASE_DIR
-     */
-    public static Path getSafePath(String userInput) throws IOException {
-        if (userInput == null || userInput.isEmpty()) {
-            throw new IllegalArgumentException("Missing path input");
-        }
+## 📄 `application.yml`
 
-        // (2) Resolve *relative* to your base, then clean up "..", "." etc.
-        Path candidate = BASE_DIR.resolve(userInput).normalize();
+```yaml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: none
 
-        // (3) Canonicalize via the file system (handles symlinks)
-        //     NOFOLLOW_LINKS prevents following symlinks if you prefer
-        Path real = candidate.toRealPath(LinkOption.NOFOLLOW_LINKS);
+postgres:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres_db
+    username: postgres_user
+    password: postgres_pass
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+    hibernate:
+      ddl-auto: update
 
-        // (4) Single, crystal-clear containment check
-        if (!real.startsWith(BASE_DIR)) {
-            throw new SecurityException(
-              "Path traversal attempt blocked: " + userInput);
-        }
+db2:
+  datasource:
+    url: jdbc:db2://localhost:50000/db2_db
+    username: db2_user
+    password: db2_pass
+    driver-class-name: com.ibm.db2.jcc.DB2Driver
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.DB2Dialect
+    show-sql: true
+    hibernate:
+      ddl-auto: none
+```
 
-        return real;
+---
+
+## ✅ `PostgresConfig.java`
+
+```java
+package com.example.demo.config;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.orm.jpa.HibernateProperties;
+import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.jdbc.DataSourceBuilder;
+import org.springframework.context.annotation.*;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.orm.jpa.*;
+import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+import javax.persistence.EntityManagerFactory;
+import javax.sql.DataSource;
+import java.util.Map;
+
+@Configuration
+@EnableTransactionManagement
+@EnableJpaRepositories(
+        basePackages = "com.example.demo.postgres.repository",
+        entityManagerFactoryRef = "postgresEntityManagerFactory",
+        transactionManagerRef = "postgresTransactionManager"
+)
+public class PostgresConfig {
+
+    @Primary
+    @Bean
+    @ConfigurationProperties(prefix = "postgres.datasource")
+    public DataSource postgresDataSource() {
+        return DataSourceBuilder.create().build();
+    }
+
+    @Primary
+    @Bean
+    public LocalContainerEntityManagerFactoryBean postgresEntityManagerFactory(
+            JpaProperties jpaProperties,
+            HibernateProperties hibernateProperties) {
+        LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
+        em.setDataSource(postgresDataSource());
+        em.setPackagesToScan("com.example.demo.postgres.entity");
+        em.setPersistenceUnitName("postgres");
+        em.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
+        em.setJpaPropertyMap(hibernateProperties.determineHibernateProperties(
+                jpaProperties.getProperties(), new HibernateSettings()));
+        return em;
+    }
+
+    @Primary
+    @Bean
+    public PlatformTransactionManager postgresTransactionManager(
+            @Qualifier("postgresEntityManagerFactory") EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
     }
 }
+```
+
+---
+
+## ✅ `Db2Config.java`
+
+```java
+package com.example.demo.config;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.orm.jpa.HibernateProperties;
+import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.jdbc.DataSourceBuilder;
+import org.springframework.context.annotation.*;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.orm.jpa.*;
+import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+import javax.persistence.EntityManagerFactory;
+import javax.sql.DataSource;
+
+@Configuration
+@EnableTransactionManagement
+@EnableJpaRepositories(
+        basePackages = "com.example.demo.db2.repository",
+        entityManagerFactoryRef = "db2EntityManagerFactory",
+        transactionManagerRef = "db2TransactionManager"
+)
+public class Db2Config {
+
+    @Bean
+    @ConfigurationProperties(prefix = "db2.datasource")
+    public DataSource db2DataSource() {
+        return DataSourceBuilder.create().build();
+    }
+
+    @Bean
+    public LocalContainerEntityManagerFactoryBean db2EntityManagerFactory(
+            JpaProperties jpaProperties,
+            HibernateProperties hibernateProperties) {
+        LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
+        em.setDataSource(db2DataSource());
+        em.setPackagesToScan("com.example.demo.db2.entity");
+        em.setPersistenceUnitName("db2");
+        em.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
+        em.setJpaPropertyMap(hibernateProperties.determineHibernateProperties(
+                jpaProperties.getProperties(), new HibernateSettings()));
+        return em;
+    }
+
+    @Bean
+    public PlatformTransactionManager db2TransactionManager(
+            @Qualifier("db2EntityManagerFactory") EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
+    }
+}
+```
+
+---
+
+## ✅ Postgres Entity Example
+
+```java
+package com.example.demo.postgres.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+public class UserEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+}
+```
+
+## ✅ DB2 Entity Example
+
+```java
+package com.example.demo.db2.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+public class EmployeeEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String dept;
+}
+```
+
+---
+
+## ✅ Postgres Repository
+
+```java
+package com.example.demo.postgres.repository;
+
+import com.example.demo.postgres.entity.UserEntity;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface UserRepository extends JpaRepository<UserEntity, Long> {
+}
+```
+
+---
+
+## ✅ DB2 Repository with Native Query
+
+```java
+package com.example.demo.db2.repository;
+
+import com.example.demo.db2.entity.EmployeeEntity;
+import org.springframework.data.jpa.repository.*;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+
+public interface EmployeeRepository extends JpaRepository<EmployeeEntity, Long> {
+
+    @Query(value = "SELECT * FROM EMPLOYEE WHERE DEPT = :dept", nativeQuery = true)
+    List<EmployeeEntity> findByDeptNative(@Param("dept") String dept);
+}
+```
+
+---
+
+## ✅ Test Controller
+
+```java
+package com.example.demo.controller;
+
+import com.example.demo.postgres.entity.UserEntity;
+import com.example.demo.postgres.repository.UserRepository;
+import com.example.demo.db2.entity.EmployeeEntity;
+import com.example.demo.db2.repository.EmployeeRepository;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+public class TestController {
+
+    private final UserRepository userRepo;
+    private final EmployeeRepository empRepo;
+
+    public TestController(UserRepository userRepo, EmployeeRepository empRepo) {
+        this.userRepo = userRepo;
+        this.empRepo = empRepo;
+    }
+
+    @GetMapping("/pg-users")
+    public List<UserEntity> getPostgresUsers() {
+        return userRepo.findAll();
+    }
+
+    @GetMapping("/db2-emps/{dept}")
+    public List<EmployeeEntity> getDb2Employees(@PathVariable String dept) {
+        return empRepo.findByDeptNative(dept);
+    }
+}
+```
+
+---
+
+Let me know if you'd like to:
+
+* Add Flyway/Liquibase
+* Add unit tests
+* Build this as a sample Maven project archive (I can generate structure)
