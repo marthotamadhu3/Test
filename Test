@@ -1,4 +1,13 @@
-Here’s the complete working setup for a Spring Boot application with **two datasources (Postgres as default and DB2)**, satisfying all your constraints.
+Context: I want to have two datasource[ DB2 & Postgres] in springboot application
+Role: As java backend expert developer
+Prompot: Should able to configure two data source in applicaiton.yml
+Constrains:
+1] Easily configure
+2] More readable
+3] Clear segigation
+4] Should able to run JPA queries on posgres and DB2
+5] Should able to run DB2 native queries.
+6] Easy to manage
 
 ---
 
