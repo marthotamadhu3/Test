@@ -1,231 +1,40 @@
-Context: I want to have two datasource[ DB2 & Postgres] in springboot application
-Role: As java backend expert developer
-Prompot: Should able to configure two data source in applicaiton.yml
-Constrains:
-1] Easily configure
-2] More readable
-3] Clear segigation
-4] Should able to run JPA queries on posgres and DB2
-5] Should able to run DB2 native queries.
-6] Easy to manage
+name: Terraform ArgoCD Env Deployment
 
----
-// ---------- PostgresEntityMarker.java ----------
-package com.example.common.entity;
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_type:
+        description: "Choose what to deploy (all, argocd, namespace, monitor)"
+        required: true
+        default: "all"
 
-public interface PostgresEntityMarker {}
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-// ---------- Db2EntityMarker.java ----------
-package com.example.common.entity;
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
 
-public interface Db2EntityMarker {}
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
 
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: terraform plan -var="deploy_type=${{ github.event.inputs.deploy_type }}"
 
-// ---------- PostgresRepositoryMarker.java ----------
-package com.example.common.repository;
-
-public interface PostgresRepositoryMarker {}
-
-
-// ---------- Db2RepositoryMarker.java ----------
-package com.example.common.repository;
-
-public interface Db2RepositoryMarker {}
-
-
-// ---------- AccountSummary.java (Postgres Entity) ----------
-package com.example.account.domain.postgres;
-
-import com.example.common.entity.PostgresEntityMarker;
-import jakarta.persistence.*;
-
-@Entity
-public class AccountSummary implements PostgresEntityMarker {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String name;
-
-    // Getters and Setters
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-}
-
-
-// ---------- AccountMaster.java (DB2 Entity) ----------
-package com.example.account.domain.db2;
-
-import com.example.common.entity.Db2EntityMarker;
-import jakarta.persistence.*;
-
-@Entity
-public class AccountMaster implements Db2EntityMarker {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String type;
-
-    // Getters and Setters
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getType() {
-        return type;
-    }
-
-    public void setType(String type) {
-        this.type = type;
-    }
-}
-
-
-// ---------- AccountSummaryRepository.java ----------
-package com.example.account.adapter.db.postgres.repository;
-
-import com.example.account.domain.postgres.AccountSummary;
-import com.example.common.repository.PostgresRepositoryMarker;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface AccountSummaryRepository extends JpaRepository<AccountSummary, Long>, PostgresRepositoryMarker {}
-
-
-// ---------- AccountMasterRepository.java ----------
-package com.example.account.adapter.db.db2.repository;
-
-import com.example.account.domain.db2.AccountMaster;
-import com.example.common.repository.Db2RepositoryMarker;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface AccountMasterRepository extends JpaRepository<AccountMaster, Long>, Db2RepositoryMarker {}
-
-
-// ---------- PostgresConfig.java ----------
-package com.example.config;
-
-import com.example.common.entity.PostgresEntityMarker;
-import com.example.common.repository.PostgresRepositoryMarker;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.jdbc.DataSourceBuilder;
-import org.springframework.context.annotation.*;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
-import org.springframework.orm.jpa.*;
-import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.EnableTransactionManagement;
-
-import javax.persistence.EntityManagerFactory;
-import javax.sql.DataSource;
-
-@Configuration
-@EnableTransactionManagement
-@EnableJpaRepositories(
-    basePackageClasses = PostgresRepositoryMarker.class,
-    entityManagerFactoryRef = "postgresEntityManagerFactory",
-    transactionManagerRef = "postgresTransactionManager"
-)
-public class PostgresConfig {
-
-    @Primary
-    @Bean
-    @ConfigurationProperties(prefix = "postgres.datasource")
-    public DataSource postgresDataSource() {
-        return DataSourceBuilder.create().build();
-    }
-
-    @Primary
-    @Bean
-    public LocalContainerEntityManagerFactoryBean postgresEntityManagerFactory(
-            JpaProperties jpaProperties) {
-
-        LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
-        em.setDataSource(postgresDataSource());
-        em.setPackagesToScan(PostgresEntityMarker.class.getPackage().getName());
-        em.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
-        em.setJpaPropertyMap(jpaProperties.getProperties());
-        return em;
-    }
-
-    @Primary
-    @Bean
-    public PlatformTransactionManager postgresTransactionManager(
-            @Qualifier("postgresEntityManagerFactory") EntityManagerFactory emf) {
-        return new JpaTransactionManager(emf);
-    }
-}
-
-
-// ---------- Db2Config.java ----------
-package com.example.config;
-
-import com.example.common.entity.Db2EntityMarker;
-import com.example.common.repository.Db2RepositoryMarker;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.jdbc.DataSourceBuilder;
-import org.springframework.context.annotation.*;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
-import org.springframework.orm.jpa.*;
-import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.EnableTransactionManagement;
-
-import javax.persistence.EntityManagerFactory;
-import javax.sql.DataSource;
-
-@Configuration
-@EnableTransactionManagement
-@EnableJpaRepositories(
-    basePackageClasses = Db2RepositoryMarker.class,
-    entityManagerFactoryRef = "db2EntityManagerFactory",
-    transactionManagerRef = "db2TransactionManager"
-)
-public class Db2Config {
-
-    @Bean
-    @ConfigurationProperties(prefix = "db2.datasource")
-    public DataSource db2DataSource() {
-        return DataSourceBuilder.create().build();
-    }
-
-    @Bean
-    public LocalContainerEntityManagerFactoryBean db2EntityManagerFactory(
-            JpaProperties jpaProperties) {
-
-        LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
-        em.setDataSource(db2DataSource());
-        em.setPackagesToScan(Db2EntityMarker.class.getPackage().getName());
-        em.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
-        em.setJpaPropertyMap(jpaProperties.getProperties());
-        return em;
-    }
-
-    @Bean
-    public PlatformTransactionManager db2TransactionManager(
-            @Qualifier("db2EntityManagerFactory") EntityManagerFactory emf) {
-        return new JpaTransactionManager(emf);
-    }
-}
+      - name: Terraform Apply
+        if: github.event.inputs.deploy_type != 'plan-only'
+        working-directory: ./terraform
+        run: terraform apply -auto-approve -var="deploy_type=${{ github.event.inputs.deploy_type }}"
