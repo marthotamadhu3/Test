@@ -1,0 +1,7 @@
+image:
+  repository: myacr.azurecr.io/microservice-1
+  tag: dev-latest
+
+database:
+  host: pg-dev.postgres.database.azure.com
+  secretName: postgres-dev-password
