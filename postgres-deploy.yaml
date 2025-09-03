@@ -38,3 +38,21 @@ jobs:
         if: github.ref == 'refs/heads/main'
         working-directory: ./terraform
         run: terraform apply -auto-approve -var-file="envs/${{ github.event.inputs.environment }}.tfvars"
+
+
+      - name: Download dump from blob
+        run: |
+          az storage blob download \
+            --account-name mystorage \
+            --container-name db-dumps \
+            --name huge_dump.dump \
+            --file huge_dump.dump
+
+      - name: Restore into Postgres
+        run: |
+          PGPASSWORD=${{ secrets.POSTGRES_PASSWORD }} pg_restore \
+            -h ${{ secrets.PG_HOST }} \
+            -U ${{ secrets.PG_USER }} \
+            -d ${{ secrets.PG_DB }} \
+            -j 4 \
+            huge_dump.dump
