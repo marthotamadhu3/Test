@@ -1,40 +1,26 @@
-name: Terraform ArgoCD Env Deployment
+name: Update GitOps
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      deploy_type:
-        description: "Choose what to deploy (all, argocd, namespace, monitor)"
+      environment:
         required: true
-        default: "all"
+        type: string
 
 jobs:
-  terraform:
+  deploy:
     runs-on: ubuntu-latest
-    env:
-      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-
     steps:
-      - name: Checkout Code
+      - name: Checkout GitOps Repo
         uses: actions/checkout@v3
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0
 
-      - name: Terraform Init
-        working-directory: ./terraform
+      - name: Init Terraform
+        working-directory: infra/postgres
         run: terraform init
 
-      - name: Terraform Plan
-        working-directory: ./terraform
-        run: terraform plan -var="deploy_type=${{ github.event.inputs.deploy_type }}"
-
-      - name: Terraform Apply
-        if: github.event.inputs.deploy_type != 'plan-only'
-        working-directory: ./terraform
-        run: terraform apply -auto-approve -var="deploy_type=${{ github.event.inputs.deploy_type }}"
+      - name: Apply Terraform
+        working-directory: infra/postgres
+        run: terraform apply -auto-approve -var="environment=${{ inputs.environment }}"
