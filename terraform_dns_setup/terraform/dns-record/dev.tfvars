@@ -1,0 +1,5 @@
+dns_zone_name       = "dev.mydomain.local"
+resource_group_name = "rg-private-dns-dev"
+record_name         = "argocd"
+k8s_namespace       = "argocd"
+k8s_service_name    = "argocd-server"
