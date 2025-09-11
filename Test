@@ -1,14 +1,104 @@
-data "external" "pgadmin_ip" {
-  program = [
-    "bash", "-c",
-    "kubectl get ingress pgadmin-ingress -n my-namespace -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
-  ]
+Perfect 👍 I see what you mean now — the manual flow you wrote on the board (image) worked, and only then you were able to access the **private link** for your Postgres Flexible Server.
+
+That means your **automation with Terraform** must replicate *exactly* the same steps:
+
+---
+
+### What your manual steps did (image recap)
+
+1. Create **Postgres instance → Networking → Private Endpoint**
+2. Provide:
+
+   * Subscription
+   * Resource group
+   * Region
+   * Network interface
+   * Target sub-resource = `postgresqlServer`
+   * Virtual network + Subnet (with dynamic IP)
+3. Enable **Integrate with private DNS zone: Yes**
+
+   * DNS zone automatically gets created (`privatelink.postgres.database.azure.com`)
+   * A record gets added → `<server>.postgres.database.azure.com` → Private IP
+
+Only after these DNS records exist inside your VNet, client apps could resolve your Postgres server to the private IP and connect.
+
+---
+
+### Terraform way to replicate this
+
+You need 3 things automated:
+
+#### 1. Postgres Flexible Server
+
+```hcl
+resource "azurerm_postgresql_flexible_server" "db" {
+  name                   = "mypgflexserver"
+  resource_group_name    = azurerm_resource_group.rg.name
+  location               = azurerm_resource_group.rg.location
+  administrator_login    = "pgadmin"
+  administrator_password = "MyStrongPassword123!"
+  sku_name               = "B_Standard_B1ms"
+  storage_mb             = 32768
+  version                = "15"
+}
+```
+
+---
+
+#### 2. Private Endpoint (maps server to VNet)
+
+```hcl
+resource "azurerm_private_endpoint" "pg_pe" {
+  name                = "mypgflexserver-pe"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  subnet_id           = azurerm_subnet.db_subnet.id
+
+  private_service_connection {
+    name                           = "pgflex-private-connection"
+    private_connection_resource_id = azurerm_postgresql_flexible_server.db.id
+    subresource_names              = ["postgresqlServer"]
+    is_manual_connection           = false
+  }
+}
+```
+
+---
+
+#### 3. Private DNS Zone (critical for name resolution)
+
+```hcl
+resource "azurerm_private_dns_zone" "pg_dns" {
+  name                = "privatelink.postgres.database.azure.com"
+  resource_group_name = azurerm_resource_group.rg.name
 }
 
-resource "azurerm_private_dns_a_record" "pgadmin_dns" {
-  name                = "pgadmin"
-  zone_name           = var.dns_zone_name
-  resource_group_name = var.resource_group_name
-  ttl                 = 300
-  records             = [data.external.pgadmin_ip.result]
+resource "azurerm_private_dns_zone_virtual_network_link" "pg_dns_link" {
+  name                  = "pg-dns-link"
+  resource_group_name   = azurerm_resource_group.rg.name
+  private_dns_zone_name = azurerm_private_dns_zone.pg_dns.name
+  virtual_network_id    = azurerm_virtual_network.vnet.id
 }
+
+resource "azurerm_private_dns_a_record" "pg_record" {
+  name                = azurerm_postgresql_flexible_server.db.name
+  zone_name           = azurerm_private_dns_zone.pg_dns.name
+  resource_group_name = azurerm_resource_group.rg.name
+  ttl                 = 300
+  records             = [azurerm_private_endpoint.pg_pe.private_service_connection[0].private_ip_address]
+}
+```
+
+---
+
+### ✅ Result
+
+* Postgres server is created.
+* Private Endpoint connects Postgres to your VNet.
+* Private DNS Zone ensures `<server>.postgres.database.azure.com` resolves to the **private IP**.
+
+This matches exactly what you did manually → so you will be able to access Postgres only via private link.
+
+---
+
+👉 Do you want me to prepare a **full Terraform working example** (with VNet + Subnet included) so you can `terraform apply` and get everything (DB + PE + DNS) in one shot?
