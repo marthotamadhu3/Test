@@ -1,0 +1,6 @@
+release: "2025-09-15"
+services:
+  - name: svc-a
+    version: 1.2.3
+  - name: svc-c
+    version: 2.0.0

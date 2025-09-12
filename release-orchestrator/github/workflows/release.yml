@@ -1,0 +1,66 @@
+name: Release Orchestrator
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_svc_a:
+        description: "Release svc-a?"
+        required: true
+        type: boolean
+        default: false
+      release_svc_b:
+        description: "Release svc-b?"
+        required: true
+        type: boolean
+        default: false
+      release_svc_c:
+        description: "Release svc-c?"
+        required: true
+        type: boolean
+        default: false
+      release_version:
+        description: "Release version"
+        required: true
+        type: string
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: [dev, uat, pre-prod, prod]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Release selected services
+        run: |
+          VERSION=${{ github.event.inputs.release_version }}
+          ENV=${{ github.event.inputs.environment }}
+
+          if [[ "${{ github.event.inputs.release_svc_a }}" == "true" ]]; then
+            echo "🚀 Releasing svc-a with version $VERSION to $ENV"
+            # Update GitOps repo manifests/svc-a/values.yaml
+          fi
+
+          if [[ "${{ github.event.inputs.release_svc_b }}" == "true" ]]; then
+            echo "🚀 Releasing svc-b with version $VERSION to $ENV"
+          fi
+
+          if [[ "${{ github.event.inputs.release_svc_c }}" == "true" ]]; then
+            echo "🚀 Releasing svc-c with version $VERSION to $ENV"
+          fi
+
+      - name: Commit updates to GitOps repo
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          # Example: clone GitOps repo and push changes
+          # git clone https://github.com/org/argo-githubactions-appset.git gitops
+          # cd gitops
+          # Update manifests based on selected services
+          # git add .
+          # git commit -m "Release version $VERSION for selected services to $ENV" || echo "No changes"
+          # git push
